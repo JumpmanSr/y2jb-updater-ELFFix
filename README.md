@@ -4,6 +4,7 @@ This project provides a payload and an HTTP server used for updating the Y2JB fi
 
 **Credits:**
 *   Y2JB Exploit by [Gezine](https://github.com/Gezine/Y2JB)
+*   [remote_lua_loader](https://github.com/Gezine/remote_lua_loader) since a lot of the code came from there
 
 <img src="demo.gif" alt="Demo Video" width="720">
 
