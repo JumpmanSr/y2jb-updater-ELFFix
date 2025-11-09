@@ -1,5 +1,5 @@
 // Make sure to change this to your computer's IP (not the PS5 one)
-const UPDATE_SERVER_IP = "192.168.1.56";
+const UPDATE_SERVER_IP = "192.168.98.178";
 
 const UPDATE_SERVER_PORT = 9090;
 
@@ -9,11 +9,18 @@ const LARGE_FILE_THRESHOLD = 100 * 1024;
 
 async function main() {
     try {
-        await log("=".repeat(40));
-        await log("Y2JB Updater Payload");
-        await log("=".repeat(40));
+        await log("=== Y2JB Updater Payload ===");
         
         send_notification("Y2JB Updater Starting...");
+
+        if (UPDATE_SERVER_IP === "192.168.98.178") {
+          await log("Default IP detected, please make sure to update the variable UPDATE_SERVER_IP" +
+          " in the y2jb_updater.js");
+
+          send_notification(`Y2JB Updater Terminated.`);
+
+          return;
+        }
         
         const SYSCALL = {
             read: 3n, write: 4n, open: 5n, close: 6n, unlink: 10n, mkdir: 136n, socket: 97n, connect: 98n
@@ -159,6 +166,7 @@ async function main() {
         syscall(SYSCALL.mkdir, alloc_string(TARGET_DIR), 0x1FFn);
 
         await log("Getting full file list...");
+        await log(`Connecting to update server: ${UPDATE_SERVER_IP}:${UPDATE_SERVER_PORT}`)
         let sock = await connectToServer();
         httpGet(sock, "/list_all_with_sizes");
         const response_body = readHttpResponse(sock);
@@ -184,9 +192,7 @@ async function main() {
             }
         }
 
-        await log("=".repeat(40));
-        await log(`Update complete! Updated: ${success_count}, Failed: ${fail_count}`);
-        await log("=".repeat(40));
+        await log(`=== Update complete! Updated: ${success_count}, Failed: ${fail_count} ===`);
 
         send_notification(`Y2JB Updater Complete!\n${success_count} files updated.`);
     } catch (e) {
