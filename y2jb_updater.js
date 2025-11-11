@@ -1,5 +1,5 @@
 // Make sure to change this to your computer's IP (not the PS5 one)
-const UPDATE_SERVER_IP = "192.168.98.178";
+const UPDATE_SERVER_IP = "192.168.50.39";
 
 const UPDATE_SERVER_PORT = 9090;
 
@@ -141,50 +141,76 @@ async function main() {
         async function downloadAndInstall_Stream(filename) {
             let sock = await connectToServer();
             httpGet(sock, `/download/${filename}`);
-            
-            await new Promise(resolve => setTimeout(resolve, 200)); 
-            
+
             const local_path_str = alloc_string(`${TARGET_DIR}/${filename}`);
             syscall(SYSCALL.unlink, local_path_str);
 
             const mode = (filename === 'splash.html') ? 0x124n : 0x1FFn;
-            
+
             const fd = BigInt.asIntN(64, syscall(SYSCALL.open, local_path_str, O_WRONLY | O_CREATE | O_TRUNC, mode));
-            if (fd < 0) { await log(`- Failed to open file, error: ${fd}`); syscall(SYSCALL.close, sock); return false; }
-            
+            if (fd < 0n) {
+                await log(`- Failed to open file, error: ${fd}`);
+                syscall(SYSCALL.close, sock);
+                return false;
+            }
+
             const buffer = malloc(8192);
             let total_written = 0;
+            let header_done = false;
 
-            const n1 = Number(syscall(SYSCALL.read, sock, buffer, 8192n));
-            if (n1 > 0) {
-                let header_end_pos = -1;
-                for (let k = 0; k < n1 - 3; k++) {
-                    if (read8(buffer + BigInt(k)) === 13 && read8(buffer + BigInt(k+1)) === 10 && read8(buffer + BigInt(k+2)) === 13 && read8(buffer + BigInt(k+3)) === 10) {
-                        header_end_pos = k;
-                        break;
-                    }
-                }
-                if (header_end_pos !== -1) {
-                    const data_start_offset = header_end_pos + 4;
-                    const len = BigInt(n1 - data_start_offset);
-                    if (len > 0) {
-                        const w = syscall(SYSCALL.write, fd, buffer + BigInt(data_start_offset), len);
-                        if (Number(w) > 0) total_written += Number(w);
-                    }
-                }
-            }
-            
             while (true) {
-                const n = syscall(SYSCALL.read, sock, buffer, 8192n);
-                if (Number(n) <= 0) break;
-                const w = syscall(SYSCALL.write, fd, buffer, n);
-                if (Number(w) > 0) total_written += Number(w);
+                const nBig = syscall(SYSCALL.read, sock, buffer, 8192n);
+                const n = Number(BigInt.asIntN(64, nBig));
+                if (n <= 0) break;
+
+                let data_ptr = buffer;
+                let data_len = BigInt(n);
+
+                if (!header_done) {
+                    let header_end_idx = -1;
+
+                    // Scan for CRLF CRLF = 13 10 13 10
+                    for (let k = 0; k <= n - 4; k++) {
+                        const c0 = read8(buffer + BigInt(k));
+                        const c1 = read8(buffer + BigInt(k + 1));
+                        const c2 = read8(buffer + BigInt(k + 2));
+                        const c3 = read8(buffer + BigInt(k + 3));
+
+                        if (c0 == 13n && c1 == 10n && c2 == 13n && c3 == 10n) {
+                            header_end_idx = k + 4; // first byte of body
+                            break;
+                        }
+                    }
+
+                    if (header_end_idx === -1) {
+                        // Still in headers, no body yet; read next chunk
+                        continue;
+                    }
+
+                    header_done = true;
+                    if (header_end_idx >= n) {
+                        // Header ended exactly at chunk end; body starts next read
+                        continue;
+                    }
+
+                    data_ptr = buffer + BigInt(header_end_idx);
+                    data_len = BigInt(n - header_end_idx);
+                }
+
+                if (data_len > 0n) {
+                    const w = syscall(SYSCALL.write, fd, data_ptr, data_len);
+                    const wn = Number(BigInt.asIntN(64, w));
+                    if (wn > 0) total_written += wn;
+                }
             }
+
             syscall(SYSCALL.close, sock);
             syscall(SYSCALL.close, fd);
+
             await log(`- Updated successfully (${total_written} bytes)`);
             return true;
         }
+
 
         await log(`Ensuring target directory '${TARGET_DIR}' exists...`);
         syscall(SYSCALL.mkdir, alloc_string(TARGET_DIR), 0x1FFn);
